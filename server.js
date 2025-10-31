@@ -1126,3 +1126,89 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Servidor rodando na porta ${PORT}`);
   console.log(`📍 Ambiente: ${process.env.NODE_ENV || 'development'}`);
 });
+
+// 🛠️ ROTA TEMPORÁRIA PARA CRIAR TABELAS VIA GET (apenas para setup inicial)
+app.get('/create-tables', async (req, res) => {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        username VARCHAR(255) NOT NULL,
+        email VARCHAR(255) UNIQUE NOT NULL,
+        password VARCHAR(255) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS salas (
+        id SERIAL PRIMARY KEY,
+        nome VARCHAR(255) NOT NULL,
+        descricao TEXT,
+        codigo_sala VARCHAR(10) UNIQUE NOT NULL,
+        qr_code TEXT,
+        professor_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS sala_alunos (
+        id SERIAL PRIMARY KEY,
+        sala_id INTEGER REFERENCES salas(id) ON DELETE CASCADE,
+        nome_aluno VARCHAR(255) NOT NULL,
+        email_aluno VARCHAR(255),
+        rgm VARCHAR(50),
+        interesse VARCHAR(100),
+        perfil VARCHAR(100),
+        experiencia VARCHAR(100),
+        joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS verification_codes (
+        id SERIAL PRIMARY KEY,
+        email VARCHAR(255) NOT NULL,
+        username VARCHAR(255) NOT NULL,
+        code VARCHAR(6) NOT NULL,
+        attempts INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        expires_at TIMESTAMP NOT NULL
+      )
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS organizacoes (
+        id SERIAL PRIMARY KEY,
+        sala_id INTEGER NOT NULL REFERENCES salas(id) ON DELETE CASCADE,
+        algoritmo VARCHAR(50) NOT NULL,
+        grupos_json JSONB NOT NULL,
+        data_organizacao TIMESTAMP NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_verification_email
+      ON verification_codes(email)
+    `);
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_organizacoes_sala
+      ON organizacoes(sala_id)
+    `);
+
+    res.json({ 
+      success: true,
+      message: '✅ Tabelas criadas com sucesso!' 
+    });
+  } catch (error) {
+    console.error('❌ Erro ao criar tabelas:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Erro ao criar tabelas', 
+      details: error.message 
+    });
+  }
+});
