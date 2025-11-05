@@ -895,6 +895,7 @@ app.post('/cpoConectarUsuario', async (req, res) => {
 });
 
 // === ROTAS DE SALAS ===
+// === ROTAS DE SALAS ===
 app.post('/salas', async (req, res) => {
   const { nome, descricao, professor_id } = req.body;
   if (!nome || !professor_id) return res.status(400).json({ error: 'Nome da sala e professor são obrigatórios' });
@@ -906,6 +907,29 @@ app.post('/salas', async (req, res) => {
   } catch (error) {
     console.error('❌ Erro ao criar sala:', error);
     res.status(500).json({ error: 'Erro ao criar sala' });
+  }
+});
+
+// ⚠️ IMPORTANTE: Esta rota DEVE vir ANTES de /salas/:sala_id
+app.post('/salas/entrar-com-perfil', async (req, res) => {
+  const { codigo_sala, nome_aluno, rgm, email_aluno, interesse, perfil, experiencia } = req.body;
+  if (!codigo_sala || !nome_aluno || !rgm) return res.status(400).json({ error: 'Código da sala, nome e RGM são obrigatórios' });
+  if (!interesse || !perfil || !experiencia) return res.status(400).json({ error: 'Por favor, responda todas as perguntas' });
+  try {
+    const salaResult = await pool.query('SELECT id, nome FROM salas WHERE codigo_sala = $1', [codigo_sala]);
+    if (salaResult.rows.length === 0) return res.status(404).json({ error: 'Código inválido' });
+    const sala = salaResult.rows[0];
+    const alunoExistente = await pool.query('SELECT id FROM sala_alunos WHERE sala_id = $1 AND rgm = $2', [sala.id, rgm]);
+    if (alunoExistente.rows.length > 0) {
+      await pool.query(`UPDATE sala_alunos SET nome_aluno = $1, interesse = $2, perfil = $3, experiencia = $4, email_aluno = $5 WHERE sala_id = $6 AND rgm = $7`, [nome_aluno, interesse, perfil, experiencia, email_aluno, sala.id, rgm]);
+      return res.json({ success: true, message: 'Dados atualizados!', sala_nome: sala.nome });
+    }
+    await pool.query(`INSERT INTO sala_alunos (sala_id, nome_aluno, rgm, email_aluno, interesse, perfil, experiencia) VALUES ($1, $2, $3, $4, $5, $6, $7)`, [sala.id, nome_aluno, rgm, email_aluno, interesse, perfil, experiencia]);
+    console.log(`✅ Aluno "${nome_aluno}" entrou na sala "${sala.nome}"`);
+    res.json({ success: true, message: `Bem-vindo à sala "${sala.nome}"!`, sala_nome: sala.nome });
+  } catch (error) {
+    console.error('❌ Erro:', error);
+    res.status(500).json({ error: 'Erro ao entrar na sala' });
   }
 });
 
@@ -921,6 +945,7 @@ app.get('/salas/professor/:professor_id', async (req, res) => {
   }
 });
 
+// ⚠️ Esta rota genérica com :sala_id DEVE vir DEPOIS das rotas específicas
 app.get('/salas/:sala_id', async (req, res) => {
   const { sala_id } = req.params;
   try {
@@ -930,6 +955,20 @@ app.get('/salas/:sala_id', async (req, res) => {
   } catch (error) {
     console.error('❌ Erro ao buscar sala:', error);
     res.status(500).json({ success: false, error: 'Erro ao buscar sala' });
+  }
+});
+
+app.get('/salas/:sala_id/alunos', async (req, res) => {
+  const { sala_id } = req.params;
+  const { professor_id } = req.query;
+  try {
+    const salaResult = await pool.query('SELECT id, nome FROM salas WHERE id = $1 AND professor_id = $2', [sala_id, professor_id]);
+    if (salaResult.rows.length === 0) return res.status(403).json({ error: 'Sala não encontrada ou sem permissão' });
+    const alunosResult = await pool.query(`SELECT id, nome_aluno, email_aluno, joined_at, rgm, interesse, perfil, experiencia FROM sala_alunos WHERE sala_id = $1 ORDER BY joined_at DESC`, [sala_id]);
+    res.json({ success: true, sala_nome: salaResult.rows[0].nome, alunos: alunosResult.rows });
+  } catch (error) {
+    console.error('❌ Erro ao buscar alunos:', error);
+    res.status(500).json({ error: 'Erro ao buscar alunos' });
   }
 });
 
@@ -959,42 +998,6 @@ app.put('/salas/:sala_id', async (req, res) => {
   } catch (error) {
     console.error('❌ Erro ao atualizar sala:', error);
     res.status(500).json({ error: 'Erro ao atualizar sala' });
-  }
-});
-
-app.post('/salas/entrar-com-perfil', async (req, res) => {
-  const { codigo_sala, nome_aluno, rgm, email_aluno, interesse, perfil, experiencia } = req.body;
-  if (!codigo_sala || !nome_aluno || !rgm) return res.status(400).json({ error: 'Código da sala, nome e RGM são obrigatórios' });
-  if (!interesse || !perfil || !experiencia) return res.status(400).json({ error: 'Por favor, responda todas as perguntas' });
-  try {
-    const salaResult = await pool.query('SELECT id, nome FROM salas WHERE codigo_sala = $1', [codigo_sala]);
-    if (salaResult.rows.length === 0) return res.status(404).json({ error: 'Código inválido' });
-    const sala = salaResult.rows[0];
-    const alunoExistente = await pool.query('SELECT id FROM sala_alunos WHERE sala_id = $1 AND rgm = $2', [sala.id, rgm]);
-    if (alunoExistente.rows.length > 0) {
-      await pool.query(`UPDATE sala_alunos SET nome_aluno = $1, interesse = $2, perfil = $3, experiencia = $4, email_aluno = $5 WHERE sala_id = $6 AND rgm = $7`, [nome_aluno, interesse, perfil, experiencia, email_aluno, sala.id, rgm]);
-      return res.json({ success: true, message: 'Dados atualizados!', sala_nome: sala.nome });
-    }
-    await pool.query(`INSERT INTO sala_alunos (sala_id, nome_aluno, rgm, email_aluno, interesse, perfil, experiencia) VALUES ($1, $2, $3, $4, $5, $6, $7)`, [sala.id, nome_aluno, rgm, email_aluno, interesse, perfil, experiencia]);
-    console.log(`✅ Aluno "${nome_aluno}" entrou na sala "${sala.nome}"`);
-    res.json({ success: true, message: `Bem-vindo à sala "${sala.nome}"!`, sala_nome: sala.nome });
-  } catch (error) {
-    console.error('❌ Erro:', error);
-    res.status(500).json({ error: 'Erro ao entrar na sala' });
-  }
-});
-
-app.get('/salas/:sala_id/alunos', async (req, res) => {
-  const { sala_id } = req.params;
-  const { professor_id } = req.query;
-  try {
-    const salaResult = await pool.query('SELECT id, nome FROM salas WHERE id = $1 AND professor_id = $2', [sala_id, professor_id]);
-    if (salaResult.rows.length === 0) return res.status(403).json({ error: 'Sala não encontrada ou sem permissão' });
-    const alunosResult = await pool.query(`SELECT id, nome_aluno, email_aluno, joined_at, rgm, interesse, perfil, experiencia FROM sala_alunos WHERE sala_id = $1 ORDER BY joined_at DESC`, [sala_id]);
-    res.json({ success: true, sala_nome: salaResult.rows[0].nome, alunos: alunosResult.rows });
-  } catch (error) {
-    console.error('❌ Erro ao buscar alunos:', error);
-    res.status(500).json({ error: 'Erro ao buscar alunos' });
   }
 });
 
