@@ -770,28 +770,22 @@ app.use(cors({
 
 app.use(express.json());
 
-// 🗄️ Conexão com PostgreSQL
+//  Conexão com PostgreSQL
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
 });
 
-// 📧 Configurar email
+//  Configurar email
 const transporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com',
+  host: 'smtp-relay.brevo.com',
   port: 587,
-  secure: false, // true para 465, false para 587
+  secure: false,
   auth: {
     user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASSWORD
-  },
-  tls: {
-    rejectUnauthorized: false
-  },
-  connectionTimeout: 10000, // 10 segundos
-  greetingTimeout: 10000
+    pass: process.env.BREVO_SMTP_KEY // Chave SMTP do Brevo
+  }
 });
-
 // 🏥 Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString(), uptime: process.uptime() });
