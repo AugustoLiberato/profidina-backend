@@ -749,6 +749,7 @@ import dotenv from 'dotenv';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import nodemailer from 'nodemailer';
+import { Resend } from 'resend';
 
 dotenv.config();
 const { Pool } = pkg;
@@ -776,16 +777,9 @@ const pool = new Pool({
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
 });
 
-//  Configurar email
-const transporter = nodemailer.createTransport({
-  host: 'smtp-relay.brevo.com',
-  port: 587,
-  secure: false,
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.BREVO_SMTP_KEY // Chave SMTP do Brevo
-  }
-});
+
+//  Configurar Resend (API HTTP - funciona no Render Free)
+const resend = new Resend(process.env.RESEND_API_KEY);
 // 🏥 Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString(), uptime: process.uptime() });
@@ -825,12 +819,12 @@ app.post('/enviarCodigoVerificacao', async (req, res) => {
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
     await pool.query('DELETE FROM verification_codes WHERE email = $1', [email]);
     await pool.query(`INSERT INTO verification_codes (email, username, code, expires_at) VALUES ($1, $2, $3, $4)`, [email, username, code, expiresAt]);
-    await transporter.sendMail({
-      from: `"Profidina Ágil" <${process.env.EMAIL_USER}>`,
-      to: email,
-      subject: 'Código de Verificação - Profidina Ágil',
-      html: `<div style="font-family:Arial;max-width:600px;margin:auto;padding:20px"><div style="background:linear-gradient(135deg,#48c9f4,#272262);padding:30px;text-align:center;border-radius:10px 10px 0 0"><h1 style="color:#fff;margin:0;font-size:28px">Profidina Ágil</h1></div><div style="background:#f8f9fa;padding:40px 30px;border-radius:0 0 10px 10px"><h2 style="color:#272262;margin-top:0">Bem-vindo, ${username}! 🎓</h2><p>Use o código:</p><div style="background:#fff;padding:25px;text-align:center;margin:30px 0;border-radius:8px;border:2px dashed #48c9f4"><div style="font-size:36px;font-weight:bold;letter-spacing:8px;color:#272262;font-family:'Courier New',monospace">${code}</div></div><p style="color:#856404">⏱️ Expira em 10 minutos</p></div></div>`
-    });
+    await resend.emails.send({
+  from: 'Profidina Ágil <onboarding@resend.dev>',
+  to: email,
+  subject: 'Código de Verificação - Profidina Ágil',
+  html: `<div style="font-family:Arial;max-width:600px;margin:auto;padding:20px"><div style="background:linear-gradient(135deg,#48c9f4,#272262);padding:30px;text-align:center;border-radius:10px 10px 0 0"><h1 style="color:#fff;margin:0;font-size:28px">Profidina Ágil</h1></div><div style="background:#f8f9fa;padding:40px 30px;border-radius:0 0 10px 10px"><h2 style="color:#272262;margin-top:0">Bem-vindo, ${username}! 🎓</h2><p>Use o código:</p><div style="background:#fff;padding:25px;text-align:center;margin:30px 0;border-radius:8px;border:2px dashed #48c9f4"><div style="font-size:36px;font-weight:bold;letter-spacing:8px;color:#272262;font-family:'Courier New',monospace">${code}</div></div><p style="color:#856404">⏱️ Expira em 10 minutos</p></div></div>`
+});
     console.log(`📧 Código enviado para ${email}: ${code}`);
     res.json({ success: true, message: 'Código enviado com sucesso', code: process.env.NODE_ENV === 'development' ? code : undefined });
   } catch (error) {
