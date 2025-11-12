@@ -12,17 +12,17 @@ const { Pool } = pkg;
 
 const app = express();
 
-// 🔧 CORS - Permitir requisições do frontend
+//  CORS - Permitir requisições do frontend
 app.use(cors({
-  origin: [
-    'http://localhost:5173',
-    'http://localhost:8080',  // ADICIONADO para o seu app local (Vue CLI)
-    'http://localhost:3000',
-    'https://profidina.vercel.app',
-    'https://profidina-7y65.vercel.app', // ADICIONADO para o Vercel
-    'https://profidina-7y65-git-main-augustos-projects-30ec658f.vercel.app' // ADICIONADO para garantir
-  ],
-  credentials: true
+  origin: [
+    'http://localhost:5173',
+    'http://localhost:8080',
+    'http://localhost:3000',
+    'https://profidina.vercel.app',
+    'https://profidina-7y65.vercel.app',
+    'https://profidina-7y65-git-main-augustos-projects-30ec658f.vercel.app'
+  ],
+  credentials: true
 }));
 
 app.use(express.json());
@@ -33,11 +33,10 @@ const pool = new Pool({
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
 });
 
-
-
 //  Configurar SendGrid
 sgMail.setApiKey(process.env.SENDGRID_API_KEY);
-// 🏥 Health check
+
+//  Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString(), uptime: process.uptime() });
 });
@@ -46,19 +45,78 @@ app.get('/', (req, res) => {
   res.json({ message: '🎓 Profidina Ágil - API funcionando!', version: '1.0.0' });
 });
 
-// 🗄️ Criar tabelas (GET e POST)
+//  Criar tabelas (GET e POST)
 const createTables = async (req, res) => {
   try {
-    await pool.query(`CREATE TABLE IF NOT EXISTS users (id SERIAL PRIMARY KEY, username VARCHAR(255) NOT NULL, email VARCHAR(255) UNIQUE NOT NULL, password VARCHAR(255) NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
-    await pool.query(`CREATE TABLE IF NOT EXISTS salas (id SERIAL PRIMARY KEY, nome VARCHAR(255) NOT NULL, descricao TEXT, codigo_sala VARCHAR(10) UNIQUE NOT NULL, qr_code TEXT, professor_id INTEGER REFERENCES users(id) ON DELETE CASCADE, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
-    await pool.query(`CREATE TABLE IF NOT EXISTS sala_alunos (id SERIAL PRIMARY KEY, sala_id INTEGER REFERENCES salas(id) ON DELETE CASCADE, nome_aluno VARCHAR(255) NOT NULL, email_aluno VARCHAR(255), rgm VARCHAR(50), interesse VARCHAR(100), perfil VARCHAR(100), experiencia VARCHAR(100), joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
-    await pool.query(`CREATE TABLE IF NOT EXISTS verification_codes (id SERIAL PRIMARY KEY, email VARCHAR(255) NOT NULL, username VARCHAR(255) NOT NULL, code VARCHAR(6) NOT NULL, attempts INTEGER DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, expires_at TIMESTAMP NOT NULL)`);
-    await pool.query(`CREATE TABLE IF NOT EXISTS organizacoes (id SERIAL PRIMARY KEY, sala_id INTEGER NOT NULL REFERENCES salas(id) ON DELETE CASCADE, algoritmo VARCHAR(50) NOT NULL, grupos_json JSONB NOT NULL, data_organizacao TIMESTAMP NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
+    await pool.query(`CREATE TABLE IF NOT EXISTS users (
+      id SERIAL PRIMARY KEY, 
+      username VARCHAR(255) NOT NULL, 
+      email VARCHAR(255) UNIQUE NOT NULL, 
+      password VARCHAR(255) NOT NULL, 
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`);
+    
+    await pool.query(`CREATE TABLE IF NOT EXISTS salas (
+      id SERIAL PRIMARY KEY, 
+      nome VARCHAR(255) NOT NULL, 
+      descricao TEXT, 
+      codigo_sala VARCHAR(10) UNIQUE NOT NULL, 
+      qr_code TEXT, 
+      professor_id INTEGER REFERENCES users(id) ON DELETE CASCADE, 
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, 
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`);
+    
+    //  TABELA ATUALIZADA COM JSONB PARA QUESTIONÁRIO
+    await pool.query(`CREATE TABLE IF NOT EXISTS sala_alunos (
+      id SERIAL PRIMARY KEY, 
+      sala_id INTEGER REFERENCES salas(id) ON DELETE CASCADE, 
+      nome_aluno VARCHAR(255) NOT NULL, 
+      email_aluno VARCHAR(255), 
+      rgm VARCHAR(50), 
+      questionario JSONB,
+      joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`);
+    
+    //  Adicionar coluna questionario se não existir (para bancos existentes)
+    await pool.query(`
+      DO $$ 
+      BEGIN 
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name='sala_alunos' AND column_name='questionario'
+        ) THEN
+          ALTER TABLE sala_alunos ADD COLUMN questionario JSONB;
+        END IF;
+      END $$;
+    `);
+    
+    await pool.query(`CREATE TABLE IF NOT EXISTS verification_codes (
+      id SERIAL PRIMARY KEY, 
+      email VARCHAR(255) NOT NULL, 
+      username VARCHAR(255) NOT NULL, 
+      code VARCHAR(6) NOT NULL, 
+      attempts INTEGER DEFAULT 0, 
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, 
+      expires_at TIMESTAMP NOT NULL
+    )`);
+    
+    await pool.query(`CREATE TABLE IF NOT EXISTS organizacoes (
+      id SERIAL PRIMARY KEY, 
+      sala_id INTEGER NOT NULL REFERENCES salas(id) ON DELETE CASCADE, 
+      algoritmo VARCHAR(50) NOT NULL, 
+      grupos_json JSONB NOT NULL, 
+      data_organizacao TIMESTAMP NOT NULL, 
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`);
+    
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_verification_email ON verification_codes(email)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_organizacoes_sala ON organizacoes(sala_id)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_alunos_questionario ON sala_alunos USING GIN (questionario)`);
+    
     res.json({ success: true, message: '✅ Tabelas criadas com sucesso!' });
   } catch (error) {
-    console.error('❌ Erro ao criar tabelas:', error);
+    console.error(' Erro ao criar tabelas:', error);
     res.status(500).json({ success: false, error: 'Erro ao criar tabelas', details: error.message });
   }
 };
@@ -69,26 +127,73 @@ app.post('/create-tables', createTables);
 app.post('/enviarCodigoVerificacao', async (req, res) => {
   const { email, username } = req.body;
   if (!email || !username) return res.status(400).json({ error: 'Email e username são obrigatórios' });
+  
   try {
     const usuarioExistente = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
-    if (usuarioExistente.rows.length > 0) return res.status(400).json({ error: 'Este email já está cadastrado' });
+    if (usuarioExistente.rows.length > 0) {
+      return res.status(400).json({ error: 'Este email já está cadastrado' });
+    }
+    
     const code = crypto.randomInt(100000, 999999).toString();
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+    
     await pool.query('DELETE FROM verification_codes WHERE email = $1', [email]);
-    await pool.query(`INSERT INTO verification_codes (email, username, code, expires_at) VALUES ($1, $2, $3, $4)`, [email, username, code, expiresAt]);
-    await sgMail.send({
-      from: {
-        email: 'zorobabilo@gmail.com',
-        name: 'Profidina Ágil'
-      },
-      to: email,
-      subject: 'Código de Verificação - Profidina Ágil',
-      html: `<div style="font-family:Arial;max-width:600px;margin:auto;padding:20px"><div style="background:linear-gradient(135deg,#48c9f4,#272262);padding:30px;text-align:center;border-radius:10px 10px 0 0"><h1 style="color:#fff;margin:0;font-size:28px">Profidina Ágil</h1></div><div style="background:#f8f9fa;padding:40px 30px;border-radius:0 0 10px 10px"><h2 style="color:#272262;margin-top:0">Bem-vindo, ${username}! 🎓</h2><p>Use o código:</p><div style="background:#fff;padding:25px;text-align:center;margin:30px 0;border-radius:8px;border:2px dashed #48c9f4"><div style="font-size:36px;font-weight:bold;letter-spacing:8px;color:#272262;font-family:'Courier New',monospace">${code}</div></div><p style="color:#856404">⏱️ Expira em 10 minutos</p></div></div>`
+    await pool.query(
+      `INSERT INTO verification_codes (email, username, code, expires_at) VALUES ($1, $2, $3, $4)`,
+      [email, username, code, expiresAt]
+    );
+    
+    const hasSendGrid = process.env.SENDGRID_API_KEY && 
+                        process.env.SENDGRID_API_KEY.length > 0 && 
+                        process.env.SENDGRID_API_KEY.startsWith('SG.');
+    
+    if (hasSendGrid) {
+      try {
+        await sgMail.send({
+          from: {
+            email: 'zorobabilo@gmail.com',
+            name: 'Profidina Ágil'
+          },
+          to: email,
+          subject: 'Código de Verificação - Profidina Ágil',
+          html: `<div style="font-family:Arial;max-width:600px;margin:auto;padding:20px">
+            <div style="background:linear-gradient(135deg,#48c9f4,#272262);padding:30px;text-align:center;border-radius:10px 10px 0 0">
+              <h1 style="color:#fff;margin:0;font-size:28px">Profidina Ágil</h1>
+            </div>
+            <div style="background:#f8f9fa;padding:40px 30px;border-radius:0 0 10px 10px">
+              <h2 style="color:#272262;margin-top:0">Bem-vindo, ${username}! 🎓</h2>
+              <p>Use o código:</p>
+              <div style="background:#fff;padding:25px;text-align:center;margin:30px 0;border-radius:8px;border:2px dashed #48c9f4">
+                <div style="font-size:36px;font-weight:bold;letter-spacing:8px;color:#272262;font-family:'Courier New',monospace">${code}</div>
+              </div>
+              <p style="color:#856404">⏱️ Expira em 10 minutos</p>
+            </div>
+          </div>`
+        });
+        console.log(` Email enviado para ${email}`);
+      } catch (emailError) {
+        console.error(' Erro ao enviar email:', emailError);
+        return res.status(500).json({ error: 'Erro ao enviar email de verificação' });
+      }
+    } else {
+      console.log(`\n${'='.repeat(60)}`);
+      console.log(` MODO DESENVOLVIMENTO - SendGrid não configurado`);
+      console.log(` Email: ${email}`);
+      console.log(` Username: ${username}`);
+      console.log(` CÓDIGO DE VERIFICAÇÃO: ${code}`);
+      console.log(`⏱ Expira em: 10 minutos`);
+      console.log(` Copie o código acima e cole na tela de verificação`);
+      console.log(`${'='.repeat(60)}\n`);
+    }
+    
+    res.json({ 
+      success: true, 
+      message: 'Código enviado com sucesso',
+      code: !hasSendGrid ? code : undefined
     });
-    console.log(`📧 Código enviado para ${email}: ${code}`);
-    res.json({ success: true, message: 'Código enviado com sucesso', code: process.env.NODE_ENV === 'development' ? code : undefined });
+    
   } catch (error) {
-    console.error('❌ Erro ao enviar código:', error);
+    console.error(' Erro ao enviar código:', error);
     res.status(500).json({ error: 'Erro ao enviar código de verificação' });
   }
 });
@@ -121,10 +226,10 @@ app.post('/verificarECadastrar', async (req, res) => {
     const result = await pool.query(`INSERT INTO users (username, email, password) VALUES ($1, $2, $3) RETURNING id, username, email`, [username, email, hashedPassword]);
     const newUser = result.rows[0];
     await pool.query('DELETE FROM verification_codes WHERE id = $1', [storedData.id]);
-    console.log(`✅ Usuário cadastrado: ${email}`);
+    console.log(` Usuário cadastrado: ${email}`);
     res.json({ success: true, message: 'Cadastro realizado com sucesso!', user: { id: newUser.id, username: newUser.username, email: newUser.email } });
   } catch (error) {
-    console.error('❌ Erro ao verificar e cadastrar:', error);
+    console.error(' Erro ao verificar e cadastrar:', error);
     if (error.code === '23505') return res.status(400).json({ error: 'Email já cadastrado' });
     res.status(500).json({ error: 'Erro ao processar cadastro' });
   }
@@ -144,12 +249,11 @@ app.post('/cpoConectarUsuario', async (req, res) => {
       res.status(401).json({ success: false, error: 'E-mail ou senha incorretos!' });
     }
   } catch (error) {
-    console.error('❌ Erro no login:', error);
+    console.error(' Erro no login:', error);
     res.status(500).json({ error: 'Erro no login' });
   }
 });
 
-// === ROTAS DE SALAS ===
 // === ROTAS DE SALAS ===
 app.post('/salas', async (req, res) => {
   const { nome, descricao, professor_id } = req.body;
@@ -160,31 +264,99 @@ app.post('/salas', async (req, res) => {
     const result = await pool.query(`INSERT INTO salas (nome, descricao, codigo_sala, qr_code, professor_id) VALUES ($1, $2, $3, $4, $5) RETURNING id, nome, descricao, codigo_sala, qr_code, created_at`, [nome, descricao, codigo_sala, qr_code, professor_id]);
     res.status(201).json({ success: true, message: 'Sala criada com sucesso!', sala: result.rows[0] });
   } catch (error) {
-    console.error('❌ Erro ao criar sala:', error);
+    console.error(' Erro ao criar sala:', error);
     res.status(500).json({ error: 'Erro ao criar sala' });
   }
 });
 
-// ⚠️ IMPORTANTE: Esta rota DEVE vir ANTES de /salas/:sala_id
+//  ROTA ATUALIZADA: Entrada na sala com novo formato de questionário
 app.post('/salas/entrar-com-perfil', async (req, res) => {
-  const { codigo_sala, nome_aluno, rgm, email_aluno, interesse, perfil, experiencia } = req.body;
-  if (!codigo_sala || !nome_aluno || !rgm) return res.status(400).json({ error: 'Código da sala, nome e RGM são obrigatórios' });
-  if (!interesse || !perfil || !experiencia) return res.status(400).json({ error: 'Por favor, responda todas as perguntas' });
   try {
-    const salaResult = await pool.query('SELECT id, nome FROM salas WHERE codigo_sala = $1', [codigo_sala]);
-    if (salaResult.rows.length === 0) return res.status(404).json({ error: 'Código inválido' });
-    const sala = salaResult.rows[0];
-    const alunoExistente = await pool.query('SELECT id FROM sala_alunos WHERE sala_id = $1 AND rgm = $2', [sala.id, rgm]);
-    if (alunoExistente.rows.length > 0) {
-      await pool.query(`UPDATE sala_alunos SET nome_aluno = $1, interesse = $2, perfil = $3, experiencia = $4, email_aluno = $5 WHERE sala_id = $6 AND rgm = $7`, [nome_aluno, interesse, perfil, experiencia, email_aluno, sala.id, rgm]);
-      return res.json({ success: true, message: 'Dados atualizados!', sala_nome: sala.nome });
+    const { codigo_sala, nome_aluno, rgm, questionario } = req.body;
+
+    console.log(' Dados recebidos:', {
+      codigo_sala,
+      nome_aluno,
+      rgm,
+      questionario
+    });
+
+    // Validação básica
+    if (!codigo_sala || !nome_aluno || !rgm) {
+      return res.status(400).json({
+        success: false,
+        error: 'Código da sala, nome e RGM são obrigatórios'
+      });
     }
-    await pool.query(`INSERT INTO sala_alunos (sala_id, nome_aluno, rgm, email_aluno, interesse, perfil, experiencia) VALUES ($1, $2, $3, $4, $5, $6, $7)`, [sala.id, nome_aluno, rgm, email_aluno, interesse, perfil, experiencia]);
-    console.log(`✅ Aluno "${nome_aluno}" entrou na sala "${sala.nome}"`);
-    res.json({ success: true, message: `Bem-vindo à sala "${sala.nome}"!`, sala_nome: sala.nome });
+
+    // Buscar sala pelo código
+    const salaResult = await pool.query(
+      'SELECT id, nome FROM salas WHERE codigo_sala = $1',
+      [codigo_sala]
+    );
+
+    if (salaResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'Sala não encontrada com este código'
+      });
+    }
+
+    const sala = salaResult.rows[0];
+
+    // Verificar se o aluno já está na sala (pelo RGM)
+    const alunoExistente = await pool.query(
+      'SELECT id FROM sala_alunos WHERE sala_id = $1 AND rgm = $2',
+      [sala.id, rgm]
+    );
+
+    if (alunoExistente.rows.length > 0) {
+      // Atualizar dados do aluno existente
+      await pool.query(
+        `UPDATE sala_alunos 
+         SET nome_aluno = $1, questionario = $2 
+         WHERE sala_id = $3 AND rgm = $4`,
+        [nome_aluno, JSON.stringify(questionario || {}), sala.id, rgm]
+      );
+
+      console.log(` Dados do aluno "${nome_aluno}" atualizados na sala "${sala.nome}"`);
+
+      return res.json({
+        success: true,
+        message: 'Dados atualizados com sucesso!',
+        sala_nome: sala.nome
+      });
+    }
+
+    // Inserir novo aluno com o questionário em formato JSON
+    const insertResult = await pool.query(
+      `INSERT INTO sala_alunos (nome_aluno, rgm, sala_id, questionario, joined_at) 
+       VALUES ($1, $2, $3, $4, NOW()) 
+       RETURNING id`,
+      [
+        nome_aluno, 
+        rgm, 
+        sala.id, 
+        JSON.stringify(questionario || {})
+      ]
+    );
+
+    console.log(` Aluno "${nome_aluno}" entrou na sala "${sala.nome}" (ID: ${insertResult.rows[0].id})`);
+
+    res.json({
+      success: true,
+      message: `Bem-vindo à sala "${sala.nome}"!`,
+      sala_nome: sala.nome,
+      aluno_id: insertResult.rows[0].id
+    });
+
   } catch (error) {
-    console.error('❌ Erro:', error);
-    res.status(500).json({ error: 'Erro ao entrar na sala' });
+    console.error(' Erro ao processar entrada na sala:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Erro ao processar entrada na sala',
+      details: error.message
+    });
   }
 });
 
@@ -195,12 +367,11 @@ app.get('/salas/professor/:professor_id', async (req, res) => {
     const result = await pool.query(`SELECT s.id, s.nome, s.descricao, s.codigo_sala, s.qr_code, s.created_at, s.updated_at, COUNT(sa.id) as total_alunos FROM salas s LEFT JOIN sala_alunos sa ON s.id = sa.sala_id WHERE s.professor_id = $1 GROUP BY s.id ORDER BY s.created_at DESC`, [professor_id]);
     res.json({ success: true, salas: result.rows });
   } catch (error) {
-    console.error('❌ Erro ao buscar salas:', error);
+    console.error(' Erro ao buscar salas:', error);
     res.status(500).json({ error: 'Erro ao buscar salas' });
   }
 });
 
-// ⚠️ Esta rota genérica com :sala_id DEVE vir DEPOIS das rotas específicas
 app.get('/salas/:sala_id', async (req, res) => {
   const { sala_id } = req.params;
   try {
@@ -208,22 +379,67 @@ app.get('/salas/:sala_id', async (req, res) => {
     if (result.rows.length === 0) return res.status(404).json({ success: false, error: 'Sala não encontrada' });
     res.json({ success: true, sala: result.rows[0] });
   } catch (error) {
-    console.error('❌ Erro ao buscar sala:', error);
+    console.error(' Erro ao buscar sala:', error);
     res.status(500).json({ success: false, error: 'Erro ao buscar sala' });
   }
 });
 
+//  ROTA ATUALIZADA: Buscar alunos com questionário
 app.get('/salas/:sala_id/alunos', async (req, res) => {
-  const { sala_id } = req.params;
-  const { professor_id } = req.query;
   try {
-    const salaResult = await pool.query('SELECT id, nome FROM salas WHERE id = $1 AND professor_id = $2', [sala_id, professor_id]);
-    if (salaResult.rows.length === 0) return res.status(403).json({ error: 'Sala não encontrada ou sem permissão' });
-    const alunosResult = await pool.query(`SELECT id, nome_aluno, email_aluno, joined_at, rgm, interesse, perfil, experiencia FROM sala_alunos WHERE sala_id = $1 ORDER BY joined_at DESC`, [sala_id]);
-    res.json({ success: true, sala_nome: salaResult.rows[0].nome, alunos: alunosResult.rows });
+    const { sala_id } = req.params;
+    const { professor_id } = req.query;
+
+    console.log(' Buscando alunos da sala:', sala_id);
+
+    // Verificar se a sala pertence ao professor
+    const salaCheck = await pool.query(
+      'SELECT id, nome FROM salas WHERE id = $1 AND professor_id = $2',
+      [sala_id, professor_id]
+    );
+
+    if (salaCheck.rows.length === 0) {
+      return res.status(403).json({
+        success: false,
+        error: 'Sala não encontrada ou você não tem permissão'
+      });
+    }
+
+    // Buscar alunos com o questionário
+    const result = await pool.query(
+      `SELECT 
+        id, 
+        nome_aluno, 
+        rgm, 
+        questionario,
+        joined_at 
+       FROM sala_alunos 
+       WHERE sala_id = $1 
+       ORDER BY joined_at DESC`,
+      [sala_id]
+    );
+
+    // Processar os resultados para garantir que questionario seja um objeto
+    const alunos = result.rows.map(aluno => ({
+      ...aluno,
+      questionario: aluno.questionario || {}
+    }));
+
+    console.log(` ${alunos.length} alunos encontrados`);
+
+    res.json({
+      success: true,
+      sala_nome: salaCheck.rows[0].nome,
+      alunos: alunos
+    });
+
   } catch (error) {
-    console.error('❌ Erro ao buscar alunos:', error);
-    res.status(500).json({ error: 'Erro ao buscar alunos' });
+    console.error(' Erro ao buscar alunos:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Erro ao buscar alunos da sala',
+      details: error.message
+    });
   }
 });
 
@@ -236,7 +452,7 @@ app.delete('/salas/:sala_id', async (req, res) => {
     await pool.query('DELETE FROM salas WHERE id = $1', [sala_id]);
     res.json({ success: true, message: 'Sala excluída com sucesso!' });
   } catch (error) {
-    console.error('❌ Erro ao excluir sala:', error);
+    console.error(' Erro ao excluir sala:', error);
     res.status(500).json({ error: 'Erro ao excluir sala' });
   }
 });
@@ -251,7 +467,7 @@ app.put('/salas/:sala_id', async (req, res) => {
     const result = await pool.query(`UPDATE salas SET nome = $1, descricao = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3 RETURNING id, nome, descricao, codigo_sala, qr_code, updated_at`, [nome, descricao, sala_id]);
     res.json({ success: true, message: 'Sala atualizada com sucesso!', sala: result.rows[0] });
   } catch (error) {
-    console.error('❌ Erro ao atualizar sala:', error);
+    console.error(' Erro ao atualizar sala:', error);
     res.status(500).json({ error: 'Erro ao atualizar sala' });
   }
 });
@@ -269,7 +485,7 @@ app.delete('/alunos/:aluno_id', async (req, res) => {
     await pool.query('DELETE FROM sala_alunos WHERE id = $1', [aluno_id]);
     res.json({ success: true, message: 'Aluno removido com sucesso' });
   } catch (error) {
-    console.error('❌ Erro ao excluir aluno:', error);
+    console.error(' Erro ao excluir aluno:', error);
     res.status(500).json({ error: 'Erro ao excluir aluno' });
   }
 });
@@ -282,7 +498,7 @@ app.post('/organizacoes', async (req, res) => {
     const result = await pool.query(`INSERT INTO organizacoes (sala_id, algoritmo, grupos_json, data_organizacao) VALUES ($1, $2, $3, $4) RETURNING id`, [sala_id, algoritmo, JSON.stringify(grupos), data]);
     res.json({ success: true, message: 'Organização salva com sucesso', organizacao_id: result.rows[0].id });
   } catch (error) {
-    console.error('❌ Erro ao salvar organização:', error);
+    console.error(' Erro ao salvar organização:', error);
     res.status(500).json({ success: false, error: 'Erro ao salvar organização' });
   }
 });
@@ -294,7 +510,7 @@ app.get('/salas/:sala_id/ultima-organizacao', async (req, res) => {
     if (result.rows.length === 0) return res.json({ success: true, organizacao: null, message: 'Nenhuma organização encontrada' });
     res.json({ success: true, organizacao: result.rows[0] });
   } catch (error) {
-    console.error('❌ Erro ao buscar organização:', error);
+    console.error(' Erro ao buscar organização:', error);
     res.status(500).json({ error: 'Erro ao buscar organização' });
   }
 });
@@ -305,13 +521,14 @@ setInterval(async () => {
     const result = await pool.query('DELETE FROM verification_codes WHERE expires_at < NOW()');
     if (result.rowCount > 0) console.log(`🧹 ${result.rowCount} códigos expirados removidos`);
   } catch (error) {
-    console.error('❌ Erro na limpeza:', error);
+    console.error(' Erro na limpeza:', error);
   }
 }, 60 * 60 * 1000);
 
 // === INICIAR SERVIDOR ===
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Servidor rodando na porta ${PORT}`);
-  console.log(`📍 Ambiente: ${process.env.NODE_ENV || 'development'}`);
+  console.log(` Servidor rodando na porta ${PORT}`);
+  console.log(` Ambiente: ${process.env.NODE_ENV || 'development'}`);
+  console.log(` Banco de dados: PostgreSQL`);
 });
