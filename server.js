@@ -129,20 +129,15 @@ app.post('/enviarCodigoVerificacao', async (req, res) => {
   if (!email || !username) return res.status(400).json({ error: 'Email e username são obrigatórios' });
   
   try {
-    // Verificar se o email já está cadastrado
     const usuarioExistente = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
     if (usuarioExistente.rows.length > 0) {
       return res.status(400).json({ error: 'Este email já está cadastrado' });
     }
     
-    // Gerar código de 6 dígitos
     const code = crypto.randomInt(100000, 999999).toString();
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutos
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
     
-    // Limpar códigos anteriores do mesmo email
     await pool.query('DELETE FROM verification_codes WHERE email = $1', [email]);
-    
-    // Inserir novo código
     await pool.query(
       `INSERT INTO verification_codes (email, username, code, expires_at) VALUES ($1, $2, $3, $4)`,
       [email, username, code, expiresAt]
@@ -154,215 +149,149 @@ app.post('/enviarCodigoVerificacao', async (req, res) => {
     
     if (hasSendGrid) {
       try {
-        //  TEMPLATE MELHORADO PARA EVITAR SPAM
-        const emailHTML = `
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Código de Verificação - Profidina Ágil</title>
-</head>
-<body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f4f4;">
-  <table role="presentation" style="width: 100%; border-collapse: collapse;">
-    <tr>
-      <td align="center" style="padding: 40px 0;">
-        <table role="presentation" style="width: 600px; border-collapse: collapse; background-color: #ffffff; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-radius: 12px; overflow: hidden;">
-          
-          <!-- CABEÇALHO -->
-          <tr>
-            <td style="background: linear-gradient(135deg, #48c9f4 0%, #272262 100%); padding: 40px 30px; text-align: center;">
-              <h1 style="margin: 0; color: #ffffff; font-size: 32px; font-weight: 600; letter-spacing: 1px;">
-                🎓 Profidina Ágil
-              </h1>
-              <p style="margin: 10px 0 0 0; color: #e0e0e0; font-size: 16px;">
-                Sistema de Organização de Salas de Aula
-              </p>
-            </td>
-          </tr>
-          
-          <!-- CONTEÚDO PRINCIPAL -->
-          <tr>
-            <td style="padding: 40px 30px; background-color: #ffffff;">
-              <h2 style="margin: 0 0 20px 0; color: #272262; font-size: 24px; font-weight: 600;">
-                Olá, ${username}! 👋
-              </h2>
+        await sgMail.send({
+          from: {
+            email: 'zorobabilo@gmail.com',
+            name: 'Profidina Ágil'
+          },
+          replyTo: 'zorobabilo@gmail.com',
+          to: email,
+          subject: 'Código de Verificação - Profidina Ágil',
+          html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;padding:20px;background:#ffffff">
+            <div style="background:linear-gradient(135deg,#48c9f4,#272262);padding:30px;text-align:center;border-radius:10px 10px 0 0">
+              <h1 style="color:#fff;margin:0;font-size:28px">🎓 Profidina Ágil</h1>
+            </div>
+            
+            <div style="background:#f8f9fa;padding:40px 30px;border-radius:0 0 10px 10px">
+              <h2 style="color:#272262;margin-top:0">Bem-vindo, ${username}! 👋</h2>
               
-              <p style="margin: 0 0 20px 0; color: #333333; font-size: 16px; line-height: 1.6;">
-                Obrigado por se cadastrar no <strong>Profidina Ágil</strong>. Para completar seu cadastro e garantir a segurança da sua conta, utilize o código de verificação abaixo:
+              <p style="color:#495057;font-size:16px;line-height:1.6">
+                Obrigado por se cadastrar no <strong>Profidina Ágil</strong>, o sistema inteligente de organização de salas de aula.
               </p>
               
-              <!-- CÓDIGO DE VERIFICAÇÃO -->
-              <table role="presentation" style="width: 100%; margin: 30px 0; border-collapse: collapse;">
-                <tr>
-                  <td style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); border: 3px dashed #48c9f4; border-radius: 12px; padding: 30px; text-align: center;">
-                    <p style="margin: 0 0 10px 0; color: #666666; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; font-weight: 600;">
-                      Seu Código de Verificação
-                    </p>
-                    <p style="margin: 0; font-size: 48px; font-weight: bold; color: #272262; letter-spacing: 12px; font-family: 'Courier New', Courier, monospace;">
-                      ${code}
-                    </p>
-                  </td>
-                </tr>
-              </table>
+              <p style="color:#495057;font-size:16px;line-height:1.6">
+                Para completar seu cadastro, utilize o código de verificação abaixo:
+              </p>
               
-              <!-- AVISO DE EXPIRAÇÃO -->
-              <table role="presentation" style="width: 100%; margin: 25px 0; border-collapse: collapse;">
-                <tr>
-                  <td style="background-color: #fff3cd; border-left: 4px solid #ffc107; border-radius: 6px; padding: 15px 20px;">
-                    <p style="margin: 0; color: #856404; font-size: 14px; line-height: 1.6;">
-                      <strong>⏰ Atenção:</strong> Este código é válido por <strong>10 minutos</strong>. Após esse período, será necessário solicitar um novo código.
-                    </p>
-                  </td>
-                </tr>
-              </table>
-              
-              <!-- INSTRUÇÕES -->
-              <div style="margin: 25px 0; padding: 20px; background-color: #f8f9fa; border-radius: 8px;">
-                <h3 style="margin: 0 0 15px 0; color: #272262; font-size: 16px; font-weight: 600;">
-                  📋 Como usar o código:
-                </h3>
-                <ol style="margin: 0; padding-left: 20px; color: #555555; font-size: 14px; line-height: 1.8;">
-                  <li>Volte para a página de cadastro</li>
-                  <li>Digite o código de 6 dígitos no campo indicado</li>
-                  <li>Clique em "Confirmar e Cadastrar"</li>
-                </ol>
+              <div style="background:#fff;padding:25px;text-align:center;margin:30px 0;border-radius:8px;border:2px dashed #48c9f4;box-shadow:0 2px 4px rgba(0,0,0,0.1)">
+                <p style="color:#6c757d;font-size:14px;margin:0 0 10px 0;text-transform:uppercase;letter-spacing:1px">Seu Código</p>
+                <div style="font-size:36px;font-weight:bold;letter-spacing:8px;color:#272262;font-family:'Courier New',monospace">${code}</div>
               </div>
               
-              <!-- SEGURANÇA -->
-              <table role="presentation" style="width: 100%; margin: 25px 0; border-collapse: collapse;">
-                <tr>
-                  <td style="background-color: #e7f3ff; border-left: 4px solid #2196F3; border-radius: 6px; padding: 15px 20px;">
-                    <p style="margin: 0; color: #0c5460; font-size: 14px; line-height: 1.6;">
-                      <strong>🔒 Segurança:</strong> Se você não solicitou este cadastro, ignore este email. Sua segurança é nossa prioridade.
-                    </p>
-                  </td>
-                </tr>
-              </table>
+              <div style="color:#856404;background:#fff3cd;padding:15px;border-radius:5px;border-left:4px solid #ffc107;margin:20px 0">
+                <p style="margin:0;font-size:14px">
+                  ⏱️ <strong>Atenção:</strong> Este código expira em 10 minutos
+                </p>
+              </div>
               
-              <p style="margin: 25px 0 0 0; color: #666666; font-size: 14px; line-height: 1.6;">
-                Atenciosamente,<br>
-                <strong style="color: #272262;">Equipe Profidina Ágil</strong>
+              <hr style="border:none;border-top:1px solid #dee2e6;margin:30px 0">
+              
+              <div style="text-align:center;margin:20px 0">
+                <a href="https://profidina-7y65.vercel.app" style="display:inline-block;background:#48c9f4;color:#fff;padding:12px 30px;text-decoration:none;border-radius:5px;font-weight:bold">
+                  Acessar Profidina Ágil
+                </a>
+              </div>
+              
+              <hr style="border:none;border-top:1px solid #dee2e6;margin:30px 0">
+              
+              <p style="color:#6c757d;font-size:14px;line-height:1.6;margin-bottom:5px">
+                Este é um email automático do sistema Profidina Ágil.
               </p>
-            </td>
-          </tr>
-          
-          <!-- RODAPÉ -->
-          <tr>
-            <td style="background-color: #f8f9fa; padding: 30px; text-align: center; border-top: 1px solid #e0e0e0;">
-              <p style="margin: 0 0 10px 0; color: #999999; font-size: 12px; line-height: 1.6;">
-                Este é um email automático, por favor não responda.
+              <p style="color:#6c757d;font-size:14px;line-height:1.6;margin-top:5px">
+                Se você não solicitou este código, por favor ignore este email.
               </p>
-              <p style="margin: 0; color: #999999; font-size: 12px;">
-                © ${new Date().getFullYear()} <strong>Profidina Ágil</strong> - Sistema de Organização de Salas de Aula
-              </p>
-              <p style="margin: 10px 0 0 0; color: #999999; font-size: 11px;">
+              
+              <p style="color:#adb5bd;font-size:12px;margin-top:30px;text-align:center;line-height:1.6">
+                © ${new Date().getFullYear()} Profidina Ágil - Sistema de Organização de Salas<br>
                 Desenvolvido como Trabalho de Conclusão de Curso
               </p>
-            </td>
-          </tr>
+            </div>
+          </div>`,
           
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>
-        `;
+          // Versão em texto puro (muito importante para anti-spam)
+          text: `Profidina Ágil - Código de Verificação
 
-        // ✅ VERSÃO EM TEXTO PURO (IMPORTANTE!)
-        const emailText = `
-Olá, ${username}!
+Olá ${username}!
 
-Obrigado por se cadastrar no Profidina Ágil.
+Obrigado por se cadastrar no Profidina Ágil, o sistema inteligente de organização de salas de aula.
 
 Seu código de verificação é: ${code}
 
-Este código é válido por 10 minutos.
+ATENÇÃO: Este código expira em 10 minutos.
 
-Como usar:
-1. Volte para a página de cadastro
-2. Digite o código de 6 dígitos
-3. Clique em "Confirmar e Cadastrar"
-
-Se você não solicitou este cadastro, ignore este email.
+Acesse: https://profidina-7y65.vercel.app
 
 ---
-Atenciosamente,
-Equipe Profidina Ágil
-Sistema de Organização de Salas de Aula
+Este é um email automático do sistema Profidina Ágil.
+Se você não solicitou este código, por favor ignore este email.
 
-© ${new Date().getFullYear()} Profidina Ágil
-Este é um email automático, não responda.
-        `.trim();
-
-        // ✅ ENVIAR COM SENDGRID
-        await sgMail.send({
-          from: {
-            email: 'zorobabilo@gmail.com', // ⚠️ Certifique-se que este email está verificado no SendGrid
-            name: 'Profidina Ágil'
+© ${new Date().getFullYear()} Profidina Ágil - Sistema de Organização de Salas
+Desenvolvido como Trabalho de Conclusão de Curso`,
+          
+          // Categorias para tracking no SendGrid
+          categories: ['verificacao', 'cadastro', 'tcc'],
+          
+          // Custom args para analytics
+          customArgs: {
+            tipo: 'codigo_verificacao',
+            ambiente: process.env.NODE_ENV || 'development',
+            projeto: 'profidina_tcc'
           },
-          to: email,
-          subject: 'Código de Verificação - Profidina Ágil', // Título claro e direto
-          html: emailHTML,
-          text: emailText, // ✅ FUNDAMENTAL para evitar SPAM
-          // ✅ Configurações adicionais anti-spam
+          
+          // Tracking settings
           trackingSettings: {
             clickTracking: {
-              enable: false
+              enable: true,
+              enableText: false
             },
             openTracking: {
-              enable: false
+              enable: true
             }
-          },
-          // ✅ Categoria para organização no SendGrid
-          categories: ['verificacao-email'],
-          // ✅ Custom Args (opcional)
-          customArgs: {
-            tipo: 'verificacao',
-            ambiente: process.env.NODE_ENV || 'development'
           }
         });
         
         console.log(`✅ Email enviado com sucesso para ${email}`);
         
       } catch (emailError) {
-        console.error('❌ Erro ao enviar email via SendGrid:', emailError);
+        console.error('❌ Erro ao enviar email:', emailError);
         
         // Log detalhado do erro
         if (emailError.response) {
-          console.error('Resposta do SendGrid:', emailError.response.body);
+          console.error('Detalhes do erro SendGrid:', {
+            statusCode: emailError.response.statusCode,
+            body: emailError.response.body
+          });
         }
         
         return res.status(500).json({ 
-          success: false,
-          error: 'Erro ao enviar email de verificação. Verifique se o email está correto.' 
+          error: 'Erro ao enviar email de verificação',
+          details: process.env.NODE_ENV === 'development' ? emailError.message : undefined
         });
       }
     } else {
-      // Modo desenvolvimento (sem SendGrid)
+      // Modo desenvolvimento sem SendGrid configurado
       console.log(`\n${'='.repeat(60)}`);
       console.log(`🔧 MODO DESENVOLVIMENTO - SendGrid não configurado`);
       console.log(`📧 Email: ${email}`);
       console.log(`👤 Username: ${username}`);
       console.log(`🔑 CÓDIGO DE VERIFICAÇÃO: ${code}`);
-      console.log(`⏱️  Expira em: 10 minutos`);
-      console.log(`💡 Copie o código acima e cole na tela de verificação`);
+      console.log(`⏱  Expira em: 10 minutos`);
+      console.log(`📋 Copie o código acima e cole na tela de verificação`);
       console.log(`${'='.repeat(60)}\n`);
     }
     
     res.json({ 
       success: true, 
-      message: 'Código enviado com sucesso! Verifique sua caixa de entrada e pasta de spam.',
-      // ⚠️ REMOVA em produção (apenas para desenvolvimento)
+      message: 'Código enviado com sucesso',
+      // Só retorna o código em desenvolvimento SEM SendGrid
       code: !hasSendGrid ? code : undefined
     });
     
   } catch (error) {
-    console.error('❌ Erro geral ao enviar código:', error);
+    console.error('❌ Erro ao processar código de verificação:', error);
     res.status(500).json({ 
-      success: false,
-      error: 'Erro ao processar solicitação. Tente novamente.' 
+      error: 'Erro ao enviar código de verificação',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 });
@@ -700,50 +629,4 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(` Servidor rodando na porta ${PORT}`);
   console.log(` Ambiente: ${process.env.NODE_ENV || 'development'}`);
   console.log(` Banco de dados: PostgreSQL`);
-});
-
-//TESTEEEEEEEE
-// ROTA DE TESTE - Adicione temporariamente no server.js
-app.get('/test-sendgrid', async (req, res) => {
-  try {
-    console.log('🧪 Testando SendGrid...');
-    
-    await sgMail.send({
-      from: {
-        email: 'zorobabilo@gmail.com',
-        name: 'Profidina Ágil'
-      },
-      to: 'zorobabilo@gmail.com', // Envie para você mesmo
-      subject: '🧪 Teste SendGrid - Profidina Ágil',
-      html: `
-        <div style="font-family: Arial; max-width: 600px; margin: auto; padding: 20px;">
-          <h1 style="color: #48c9f4;">✅ SendGrid Funcionando!</h1>
-          <p>Se você recebeu este email, sua configuração do SendGrid está correta.</p>
-          <p><strong>Próximo passo:</strong> Teste o cadastro completo no sistema.</p>
-        </div>
-      `,
-      text: 'SendGrid funcionando! Se você recebeu este email, está tudo certo.',
-      trackingSettings: {
-        clickTracking: { enable: false },
-        openTracking: { enable: false }
-      }
-    });
-    
-    console.log('✅ Email de teste enviado com sucesso!');
-    res.json({ 
-      success: true, 
-      message: '✅ Email enviado! Verifique sua caixa de entrada (e spam).' 
-    });
-    
-  } catch (error) {
-    console.error('❌ Erro no teste do SendGrid:', error);
-    if (error.response) {
-      console.error('Detalhes do erro:', JSON.stringify(error.response.body, null, 2));
-    }
-    res.status(500).json({ 
-      success: false, 
-      error: 'Erro ao enviar email',
-      details: error.response?.body || error.message 
-    });
-  }
 });
