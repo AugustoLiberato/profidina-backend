@@ -184,15 +184,7 @@ app.post('/enviarCodigoVerificacao', async (req, res) => {
                 </p>
               </div>
               
-              <hr style="border:none;border-top:1px solid #dee2e6;margin:30px 0">
-              
-              <div style="text-align:center;margin:20px 0">
-                <a href="https://profidina-7y65.vercel.app" style="display:inline-block;background:#48c9f4;color:#fff;padding:12px 30px;text-decoration:none;border-radius:5px;font-weight:bold">
-                  Acessar Profidina Ágil
-                </a>
-              </div>
-              
-              <hr style="border:none;border-top:1px solid #dee2e6;margin:30px 0">
+           
               
               <p style="color:#6c757d;font-size:14px;line-height:1.6;margin-bottom:5px">
                 Este é um email automático do sistema Profidina Ágil.
