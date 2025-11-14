@@ -5,7 +5,7 @@ import dotenv from 'dotenv';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import sgMail from '@sendgrid/mail';
-import { Resend } from 'resend';
+
 
 
 
@@ -126,13 +126,39 @@ app.get('/create-tables', createTables);
 app.post('/create-tables', createTables);
 
 // === ROTAS DE AUTENTICAÇÃO ===
+// Configurar Resend
+
+
+// === ROTAS DE AUTENTICAÇÃO ===
 import nodemailer from 'nodemailer';
 
-// Criar transporter do Gmail (adicione no início do arquivo)
-// Configurar Resend
-const resend = new Resend(process.env.RESEND_API_KEY);
+// Configurar transporter baseado no ambiente
+let emailTransporter;
 
-// Na rota /enviarCodigoVerificacao, substitua o envio:
+if (process.env.NODE_ENV === 'production') {
+  // Produção: usar SendGrid
+  emailTransporter = nodemailer.createTransport({
+    host: 'smtp.sendgrid.net',
+    port: 587,
+    secure: false,
+    auth: {
+      user: 'apikey',
+      pass: process.env.SENDGRID_API_KEY
+    }
+  });
+  console.log('📧 Usando SendGrid para emails (produção)');
+} else {
+  // Desenvolvimento: usar Gmail SMTP
+  emailTransporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+      user: process.env.GMAIL_USER,
+      pass: process.env.GMAIL_APP_PASSWORD
+    }
+  });
+  console.log('📧 Usando Gmail SMTP para emails (desenvolvimento)');
+}
+
 app.post('/enviarCodigoVerificacao', async (req, res) => {
   const { email, username } = req.body;
   if (!email || !username) return res.status(400).json({ error: 'Email e username são obrigatórios' });
@@ -152,12 +178,7 @@ app.post('/enviarCodigoVerificacao', async (req, res) => {
       [email, username, code, expiresAt]
     );
     
-    // ✅ USAR RESEND
-    const hasEmailConfig = process.env.RESEND_API_KEY;
-    
-    if (hasEmailConfig) {
-      try {
-        const emailHTML = `
+    const emailHTML = `
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -193,9 +214,9 @@ app.post('/enviarCodigoVerificacao', async (req, res) => {
   </div>
 </body>
 </html>
-        `;
+    `;
 
-        const emailText = `
+    const emailText = `
 Olá, ${username}!
 
 Bem-vindo ao Profidina Ágil!
@@ -210,40 +231,33 @@ Se você não solicitou este cadastro, ignore este email.
 Atenciosamente,
 Equipe Profidina Ágil
 © ${new Date().getFullYear()} Profidina Ágil
-        `.trim();
+    `.trim();
 
-        // ✅ ENVIAR VIA RESEND
-        await resend.emails.send({
-          from: 'Profidina Ágil <onboarding@resend.dev>',
-          to: email,
-          subject: 'Código de Verificação - Profidina Ágil',
-          html: emailHTML,
-          text: emailText
-        });
-        
-        console.log(`✅ Email enviado via Resend para ${email}`);
-        
-     } catch (emailError) {
-  console.error('❌ Erro ao enviar email via Resend:', emailError);
-  console.error('❌ Detalhes do erro:', JSON.stringify(emailError, null, 2));
-  return res.status(500).json({ 
-    success: false,
-    error: 'Erro ao enviar email. Tente novamente.',
-    details: emailError.message
-  });
-}
-    } else {
-      console.log(`\n${'='.repeat(60)}`);
-      console.log(`🔧 MODO DESENVOLVIMENTO`);
-      console.log(`📧 Email: ${email}`);
-      console.log(`🔑 CÓDIGO: ${code}`);
-      console.log(`${'='.repeat(60)}\n`);
+    try {
+      await emailTransporter.sendMail({
+        from: process.env.NODE_ENV === 'production' 
+          ? 'Profidina Ágil <noreply@profidinaagil.com>' 
+          : process.env.GMAIL_USER,
+        to: email,
+        subject: 'Código de Verificação - Profidina Ágil',
+        html: emailHTML,
+        text: emailText
+      });
+      
+      console.log(`✅ Email enviado para ${email}`);
+      
+    } catch (emailError) {
+      console.error('❌ Erro ao enviar email:', emailError);
+      return res.status(500).json({ 
+        success: false,
+        error: 'Erro ao enviar email. Tente novamente.' 
+      });
     }
     
     res.json({ 
       success: true, 
       message: 'Código enviado! Verifique sua caixa de entrada.',
-      code: !hasEmailConfig ? code : undefined
+      code: process.env.NODE_ENV !== 'production' ? code : undefined
     });
     
   } catch (error) {
@@ -254,6 +268,21 @@ Equipe Profidina Ágil
     });
   }
 });
+```
+
+## 📝 Variáveis de ambiente:
+
+### **No Render (já tem):**
+```
+SENDGRID_API_KEY = (sua chave)
+NODE_ENV = production
+```
+
+### **No seu `.env` local:**
+```
+GMAIL_USER = seu-email@gmail.com
+GMAIL_APP_PASSWORD = sua-senha-de-app-16-digitos
+NODE_ENV = development
 
 app.post('/verificarECadastrar', async (req, res) => {
   const { email, username, password, verificationCode } = req.body;
