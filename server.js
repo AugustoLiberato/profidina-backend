@@ -152,33 +152,96 @@ app.post('/enviarCodigoVerificacao', async (req, res) => {
       [email, username, code, expiresAt]
     );
     
-    //  USAR GMAIL SMTP
+    // ✅ USAR RESEND
     const hasEmailConfig = process.env.RESEND_API_KEY;
     
     if (hasEmailConfig) {
-  try {
-    await resend.emails.send({
-      from: 'Profidina Ágil <onboarding@resend.dev>',
-      to: email,
-      subject: 'Código de Verificação - Profidina Ágil',
-      html: emailHTML,
-      text: emailText
-    });
+      try {
+        const emailHTML = `
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+  <div style="background: linear-gradient(135deg, #48c9f4 0%, #272262 100%); padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
+    <h1 style="margin: 0; color: #ffffff; font-size: 28px;">🎓 Profidina Ágil</h1>
+    <p style="margin: 8px 0 0 0; color: #e0e0e0; font-size: 14px;">Sistema de Organização de Salas</p>
+  </div>
+  
+  <div style="background: #ffffff; padding: 30px; border-radius: 0 0 10px 10px; border: 1px solid #e0e0e0;">
+    <h2 style="color: #272262; margin-top: 0;">Olá, ${username}! 👋</h2>
+    <p>Bem-vindo ao Profidina Ágil! Use o código abaixo para confirmar seu cadastro:</p>
     
-    console.log(`✅ Email enviado via Resend para ${email}`);
+    <div style="background: #f8f9fa; border: 2px dashed #48c9f4; border-radius: 8px; padding: 25px; text-align: center; margin: 25px 0;">
+      <p style="margin: 0 0 8px 0; color: #666; font-size: 12px; text-transform: uppercase; letter-spacing: 1px;">Código de Verificação</p>
+      <p style="margin: 0; font-size: 36px; font-weight: bold; color: #272262; letter-spacing: 8px; font-family: monospace;">${code}</p>
+    </div>
     
-  } catch (emailError) {
-    console.error('❌ Erro ao enviar email via Resend:', emailError);
-    return res.status(500).json({ 
-      success: false,
-      error: 'Erro ao enviar email. Tente novamente.' 
-    });
-  }
+    <div style="background: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px; padding: 12px 15px; margin: 20px 0;">
+      <p style="margin: 0; color: #856404; font-size: 14px;"><strong>⏰ Validade:</strong> Este código expira em 10 minutos.</p>
+    </div>
+    
+    <p style="color: #666; font-size: 14px;">Se você não solicitou este cadastro, ignore este email.</p>
+    <p style="margin-top: 20px; color: #666; font-size: 14px;">Atenciosamente,<br><strong style="color: #272262;">Equipe Profidina Ágil</strong></p>
+  </div>
+  
+  <div style="text-align: center; padding: 20px; color: #999; font-size: 12px;">
+    <p style="margin: 0;">Este é um email automático, não responda.</p>
+    <p style="margin: 5px 0 0 0;">© ${new Date().getFullYear()} Profidina Ágil - TCC</p>
+  </div>
+</body>
+</html>
+        `;
+
+        const emailText = `
+Olá, ${username}!
+
+Bem-vindo ao Profidina Ágil!
+
+Seu código de verificação é: ${code}
+
+Este código é válido por 10 minutos.
+
+Se você não solicitou este cadastro, ignore este email.
+
+---
+Atenciosamente,
+Equipe Profidina Ágil
+© ${new Date().getFullYear()} Profidina Ágil
+        `.trim();
+
+        // ✅ ENVIAR VIA RESEND
+        await resend.emails.send({
+          from: 'Profidina Ágil <onboarding@resend.dev>',
+          to: email,
+          subject: 'Código de Verificação - Profidina Ágil',
+          html: emailHTML,
+          text: emailText
+        });
+        
+        console.log(`✅ Email enviado via Resend para ${email}`);
+        
+      } catch (emailError) {
+        console.error('❌ Erro ao enviar email via Resend:', emailError);
+        return res.status(500).json({ 
+          success: false,
+          error: 'Erro ao enviar email. Tente novamente.' 
+        });
+      }
+    } else {
+      console.log(`\n${'='.repeat(60)}`);
+      console.log(`🔧 MODO DESENVOLVIMENTO`);
+      console.log(`📧 Email: ${email}`);
+      console.log(`🔑 CÓDIGO: ${code}`);
+      console.log(`${'='.repeat(60)}\n`);
+    }
     
     res.json({ 
       success: true, 
       message: 'Código enviado! Verifique sua caixa de entrada.',
-      code: !hasGmailConfig ? code : undefined
+      code: !hasEmailConfig ? code : undefined
     });
     
   } catch (error) {
