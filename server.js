@@ -270,16 +270,13 @@ Equipe Profidina Ágil
 });
 ```
 
-## 📝 Variáveis de ambiente:
 
-### **No Render (já tem):**
-```
-SENDGRID_API_KEY = (sua chave)
+
+
 NODE_ENV = production
 ```
 
-### **No seu `.env` local:**
-```
+
 GMAIL_USER = seu-email@gmail.com
 GMAIL_APP_PASSWORD = sua-senha-de-app-16-digitos
 NODE_ENV = development
