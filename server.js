@@ -223,13 +223,15 @@ Equipe Profidina Ágil
         
         console.log(`✅ Email enviado via Resend para ${email}`);
         
-      } catch (emailError) {
-        console.error('❌ Erro ao enviar email via Resend:', emailError);
-        return res.status(500).json({ 
-          success: false,
-          error: 'Erro ao enviar email. Tente novamente.' 
-        });
-      }
+     } catch (emailError) {
+  console.error('❌ Erro ao enviar email via Resend:', emailError);
+  console.error('❌ Detalhes do erro:', JSON.stringify(emailError, null, 2));
+  return res.status(500).json({ 
+    success: false,
+    error: 'Erro ao enviar email. Tente novamente.',
+    details: emailError.message
+  });
+}
     } else {
       console.log(`\n${'='.repeat(60)}`);
       console.log(`🔧 MODO DESENVOLVIMENTO`);
