@@ -268,18 +268,6 @@ Equipe Profidina Ágil
     });
   }
 });
-```
-
-
-
-
-NODE_ENV = production
-```
-
-
-GMAIL_USER = seu-email@gmail.com
-GMAIL_APP_PASSWORD = sua-senha-de-app-16-digitos
-NODE_ENV = development
 
 app.post('/verificarECadastrar', async (req, res) => {
   const { email, username, password, verificationCode } = req.body;
