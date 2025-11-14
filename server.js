@@ -136,17 +136,8 @@ import nodemailer from 'nodemailer';
 let emailTransporter;
 
 if (process.env.NODE_ENV === 'production') {
-  // Produção: usar SendGrid
-  emailTransporter = nodemailer.createTransport({
-    host: 'smtp.sendgrid.net',
-    port: 587,
-    secure: false,
-    auth: {
-      user: 'apikey',
-      pass: process.env.SENDGRID_API_KEY
-    }
-  });
-  console.log('📧 Usando SendGrid para emails (produção)');
+  // Produção: usar SendGrid API (não SMTP!)
+  console.log('📧 Usando SendGrid API para emails (produção)');
 } else {
   // Desenvolvimento: usar Gmail SMTP
   emailTransporter = nodemailer.createTransport({
@@ -234,25 +225,42 @@ Equipe Profidina Ágil
     `.trim();
 
     try {
-      await emailTransporter.sendMail({
-        from: process.env.NODE_ENV === 'production' 
-          ? 'Profidina Ágil <noreply@profidinaagil.com>' 
-          : process.env.GMAIL_USER,
-        to: email,
-        subject: 'Código de Verificação - Profidina Ágil',
-        html: emailHTML,
-        text: emailText
-      });
-      
-      console.log(`✅ Email enviado para ${email}`);
-      
-    } catch (emailError) {
-      console.error('❌ Erro ao enviar email:', emailError);
-      return res.status(500).json({ 
-        success: false,
-        error: 'Erro ao enviar email. Tente novamente.' 
-      });
-    }
+  if (process.env.NODE_ENV === 'production') {
+    //  Produção: usar SendGrid API (HTTP)
+    const msg = {
+      to: email,
+      from: {
+        email: 'noreply@profidinaagil.com',
+        name: 'Profidina Ágil'
+      },
+      subject: 'Código de Verificação - Profidina Ágil',
+      html: emailHTML,
+      text: emailText
+    };
+    
+    await sgMail.send(msg);
+    console.log(` Email enviado via SendGrid API para ${email}`);
+    
+  } else {
+    // Desenvolvimento: usar Gmail SMTP
+    await emailTransporter.sendMail({
+      from: process.env.GMAIL_USER,
+      to: email,
+      subject: 'Código de Verificação - Profidina Ágil',
+      html: emailHTML,
+      text: emailText
+    });
+    
+    console.log(` Email enviado via Gmail para ${email}`);
+  }
+  
+} catch (emailError) {
+  console.error(' Erro ao enviar email:', emailError);
+  return res.status(500).json({ 
+    success: false,
+    error: 'Erro ao enviar email. Tente novamente.' 
+  });
+}
     
     res.json({ 
       success: true, 
