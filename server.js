@@ -157,7 +157,7 @@ app.post('/enviarCodigoVerificacao', async (req, res) => {
     );
     
     // ✅ USAR GMAIL SMTP
-    const hasGmailConfig = process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD;
+    const hasGmailConfig = process.env.EMAIL_USER && process.env.EMAIL_HOST_PASSWORD;
     
     if (hasGmailConfig) {
       try {
@@ -220,7 +220,7 @@ Equipe Profidina Ágil
         await gmailTransporter.sendMail({
           from: {
             name: 'Profidina Ágil',
-            address: process.env.GMAIL_USER
+            address: process.env.EMAIL_USER
           },
           to: email,
           subject: 'Código de Verificação - Profidina Ágil',
