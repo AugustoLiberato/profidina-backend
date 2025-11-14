@@ -230,7 +230,7 @@ Equipe Profidina Ágil
     const msg = {
       to: email,
       from: {
-        email: 'noreply@profidinaagil.com',
+        email: 'zorobabilo@gmail.com',
         name: 'Profidina Ágil'
       },
       subject: 'Código de Verificação - Profidina Ágil',
