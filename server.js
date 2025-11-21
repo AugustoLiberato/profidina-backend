@@ -20,6 +20,7 @@ app.use(cors({
     'http://localhost:5173',
     'http://localhost:8080',
     'http://localhost:3000',
+    'http://10.0.0.161:8080',
     'https://profidina.vercel.app',
     'https://profidina-7y65.vercel.app',
     'https://profidina-7y65-git-main-augustos-projects-30ec658f.vercel.app'
@@ -116,7 +117,7 @@ const createTables = async (req, res) => {
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_organizacoes_sala ON organizacoes(sala_id)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_alunos_questionario ON sala_alunos USING GIN (questionario)`);
     
-    res.json({ success: true, message: '✅ Tabelas criadas com sucesso!' });
+    res.json({ success: true, message: ' Tabelas criadas com sucesso!' });
   } catch (error) {
     console.error(' Erro ao criar tabelas:', error);
     res.status(500).json({ success: false, error: 'Erro ao criar tabelas', details: error.message });
@@ -137,7 +138,7 @@ let emailTransporter;
 
 if (process.env.NODE_ENV === 'production') {
   // Produção: usar SendGrid API (não SMTP!)
-  console.log('📧 Usando SendGrid API para emails (produção)');
+  console.log(' Usando SendGrid API para emails (produção)');
 } else {
   // Desenvolvimento: usar Gmail SMTP
   emailTransporter = nodemailer.createTransport({
@@ -147,7 +148,7 @@ if (process.env.NODE_ENV === 'production') {
       pass: process.env.GMAIL_APP_PASSWORD
     }
   });
-  console.log('📧 Usando Gmail SMTP para emails (desenvolvimento)');
+  console.log(' Usando Gmail SMTP para emails (desenvolvimento)');
 }
 
 app.post('/enviarCodigoVerificacao', async (req, res) => {
@@ -269,7 +270,7 @@ Equipe Profidina Ágil
     });
     
   } catch (error) {
-    console.error('❌ Erro ao enviar código:', error);
+    console.error(' Erro ao enviar código:', error);
     res.status(500).json({ 
       success: false,
       error: 'Erro ao processar solicitação.' 
@@ -557,7 +558,7 @@ app.delete('/alunos/:aluno_id', async (req, res) => {
   if (!professor_id) return res.status(400).json({ error: 'ID do professor é obrigatório' });
   try {
     const alunoResult = await pool.query('SELECT sala_id FROM sala_alunos WHERE id = $1', [aluno_id]);
-    if (alunoResult.rows.length === 0) return res.status(404).json({ error: 'Aluno não encontrado' });
+    if (alunoResult.rows.length === 0) return res.status(404).json({ error: 'Aluno excluido' });
     const { sala_id } = alunoResult.rows[0];
     const salaResult = await pool.query('SELECT id FROM salas WHERE id = $1 AND professor_id = $2', [sala_id, professor_id]);
     if (salaResult.rows.length === 0) return res.status(403).json({ error: 'Permissão negada' });
