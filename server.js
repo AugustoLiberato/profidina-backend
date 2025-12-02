@@ -51,24 +51,24 @@ app.get('/', (req, res) => {
 //  Criar tabelas (GET e POST)
 const createTables = async (req, res) => {
   try {
-    await pool.query(`CREATE TABLE IF NOT EXISTS users (
-      id SERIAL PRIMARY KEY, 
-      username VARCHAR(255) NOT NULL, 
-      email VARCHAR(255) UNIQUE NOT NULL, 
-      password VARCHAR(255) NOT NULL, 
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )`);
+    await pool.query(`CREATE TABLE IF NOT EXISTS professor (
+  id SERIAL PRIMARY KEY, 
+  nome VARCHAR(255) NOT NULL, 
+  email VARCHAR(255) UNIQUE NOT NULL, 
+  senha VARCHAR(255) NOT NULL, 
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)`);
     
     await pool.query(`CREATE TABLE IF NOT EXISTS salas (
-      id SERIAL PRIMARY KEY, 
-      nome VARCHAR(255) NOT NULL, 
-      descricao TEXT, 
-      codigo_sala VARCHAR(10) UNIQUE NOT NULL, 
-      qr_code TEXT, 
-      professor_id INTEGER REFERENCES users(id) ON DELETE CASCADE, 
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, 
-      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )`);
+  id SERIAL PRIMARY KEY, 
+  nome VARCHAR(255) NOT NULL, 
+  descricao TEXT, 
+  codigo_sala VARCHAR(10) UNIQUE NOT NULL, 
+  qr_code TEXT, 
+  professor_id INTEGER REFERENCES professor(id) ON DELETE CASCADE,  
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, 
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)`);
     
     //  TABELA ATUALIZADA COM JSONB PARA QUESTIONÁRIO
     await pool.query(`CREATE TABLE IF NOT EXISTS sala_alunos (
@@ -156,7 +156,7 @@ app.post('/enviarCodigoVerificacao', async (req, res) => {
   if (!email || !username) return res.status(400).json({ error: 'Email e username são obrigatórios' });
   
   try {
-    const usuarioExistente = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
+    const usuarioExistente = await pool.query('SELECT id FROM professor WHERE email = $1', [email]);
     if (usuarioExistente.rows.length > 0) {
       return res.status(400).json({ error: 'Este email já está cadastrado' });
     }
@@ -280,51 +280,139 @@ Equipe Profidina Ágil
 
 app.post('/verificarECadastrar', async (req, res) => {
   const { email, username, password, verificationCode } = req.body;
-  if (!email || !username || !password || !verificationCode) return res.status(400).json({ error: 'Todos os campos são obrigatórios' });
+  
+  if (!email || !username || !password || !verificationCode) {
+    return res.status(400).json({ error: 'Todos os campos são obrigatórios' });
+  }
+  
   try {
-    const codeResult = await pool.query(`SELECT id, code, attempts, expires_at FROM verification_codes WHERE email = $1 ORDER BY created_at DESC LIMIT 1`, [email]);
-    if (codeResult.rows.length === 0) return res.status(400).json({ error: 'Código não encontrado. Solicite um novo código.' });
+    // 1. BUSCAR O CÓDIGO DE VERIFICAÇÃO
+    const codeResult = await pool.query(
+      `SELECT id, code, attempts, expires_at 
+       FROM verification_codes 
+       WHERE email = $1 
+       ORDER BY created_at DESC 
+       LIMIT 1`,
+      [email]
+    );
+    
+    if (codeResult.rows.length === 0) {
+      return res.status(400).json({ 
+        error: 'Código não encontrado. Solicite um novo código.' 
+      });
+    }
+    
     const storedData = codeResult.rows[0];
+    
+    // 2. VERIFICAR SE O CÓDIGO EXPIROU
     if (new Date() > new Date(storedData.expires_at)) {
       await pool.query('DELETE FROM verification_codes WHERE id = $1', [storedData.id]);
-      return res.status(400).json({ error: 'Código expirado. Solicite um novo código.' });
+      return res.status(400).json({ 
+        error: 'Código expirado. Solicite um novo código.' 
+      });
     }
+    
+    // 3. VERIFICAR NÚMERO DE TENTATIVAS
     if (storedData.attempts >= 5) {
       await pool.query('DELETE FROM verification_codes WHERE id = $1', [storedData.id]);
-      return res.status(400).json({ error: 'Número máximo de tentativas excedido. Solicite um novo código.' });
+      return res.status(400).json({ 
+        error: 'Número máximo de tentativas excedido. Solicite um novo código.' 
+      });
     }
+    
+    // 4. VERIFICAR SE O CÓDIGO ESTÁ CORRETO
     if (storedData.code !== verificationCode) {
-      await pool.query('UPDATE verification_codes SET attempts = attempts + 1 WHERE id = $1', [storedData.id]);
-      return res.status(400).json({ error: `Código inválido. Tentativas restantes: ${5 - (storedData.attempts + 1)}` });
+      await pool.query(
+        'UPDATE verification_codes SET attempts = attempts + 1 WHERE id = $1', 
+        [storedData.id]
+      );
+      return res.status(400).json({ 
+        error: `Código inválido. Tentativas restantes: ${5 - (storedData.attempts + 1)}` 
+      });
     }
-    const usuarioExistente = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
+    
+    // 5. VERIFICAR SE O EMAIL JÁ ESTÁ CADASTRADO
+    const usuarioExistente = await pool.query(
+      'SELECT id FROM professor WHERE email = $1', 
+      [email]
+    );
+    
     if (usuarioExistente.rows.length > 0) {
       await pool.query('DELETE FROM verification_codes WHERE id = $1', [storedData.id]);
-      return res.status(400).json({ error: 'Este email já está cadastrado' });
+      return res.status(400).json({ 
+        error: 'Este email já está cadastrado' 
+      });
     }
+    
+    // 6. CADASTRAR O NOVO PROFESSOR
     const hashedPassword = await bcrypt.hash(password, 12);
-    const result = await pool.query(`INSERT INTO users (username, email, password) VALUES ($1, $2, $3) RETURNING id, username, email`, [username, email, hashedPassword]);
+    
+    const result = await pool.query(
+      `INSERT INTO professor (nome, email, senha) 
+       VALUES ($1, $2, $3) 
+       RETURNING id, nome, email`,
+      [username, email, hashedPassword]
+    );
+    
     const newUser = result.rows[0];
+    
+    // 7. DELETAR O CÓDIGO DE VERIFICAÇÃO USADO
     await pool.query('DELETE FROM verification_codes WHERE id = $1', [storedData.id]);
-    console.log(` Usuário cadastrado: ${email}`);
-    res.json({ success: true, message: 'Cadastro realizado com sucesso!', user: { id: newUser.id, username: newUser.username, email: newUser.email } });
+    
+    console.log(` ✅ Usuário cadastrado: ${email}`);
+    
+    // 8. RETORNAR SUCESSO
+    res.json({ 
+      success: true, 
+      message: 'Cadastro realizado com sucesso!', 
+      user: { 
+        id: newUser.id, 
+        nome: newUser.nome,
+        email: newUser.email 
+      } 
+    });
+    
   } catch (error) {
-    console.error(' Erro ao verificar e cadastrar:', error);
-    if (error.code === '23505') return res.status(400).json({ error: 'Email já cadastrado' });
-    res.status(500).json({ error: 'Erro ao processar cadastro' });
+    console.error(' ❌ Erro ao verificar e cadastrar:', error);
+    
+    if (error.code === '23505') {
+      return res.status(400).json({ error: 'Email já cadastrado' });
+    }
+    
+    res.status(500).json({ 
+      error: 'Erro ao processar cadastro',
+      details: process.env.NODE_ENV !== 'production' ? error.message : undefined
+    });
   }
 });
 
 app.post('/cpoConectarUsuario', async (req, res) => {
   const { email, password } = req.body;
-  if (!email || !password) return res.status(400).json({ error: 'Preencha todos os campos' });
+  if (!email || !password) 
+    return res.status(400).json({ error: 'Preencha todos os campos' });
+  
   try {
-    const result = await pool.query('SELECT id, username, email, password FROM users WHERE email = $1', [email]);
-    if (result.rows.length === 0) return res.status(401).json({ success: false, error: 'E-mail ou senha incorretos!' });
+    const result = await pool.query(
+      'SELECT id, nome, email, senha FROM professor WHERE email = $1', 
+      [email]
+    );
+    
+    if (result.rows.length === 0) 
+      return res.status(401).json({ success: false, error: 'E-mail ou senha incorretos!' });
+    
     const user = result.rows[0];
-    const isPasswordValid = await bcrypt.compare(password, user.password);
+    const isPasswordValid = await bcrypt.compare(password, user.senha);  // ← CORRIGIDO
+    
     if (isPasswordValid) {
-      res.json({ success: true, message: 'Login autorizado', user: { id: user.id, username: user.username, email: user.email } });
+      res.json({ 
+        success: true, 
+        message: 'Login autorizado', 
+        user: { 
+          id: user.id, 
+          nome: user.nome,  // ← CORRIGIDO
+          email: user.email 
+        } 
+      });
     } else {
       res.status(401).json({ success: false, error: 'E-mail ou senha incorretos!' });
     }
