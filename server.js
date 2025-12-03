@@ -570,14 +570,44 @@ app.get('/salas/professor/:professor_id', async (req, res) => {
   }
 });
 
+// app.get('/salas/:sala_id', async (req, res) => {
+//   const { sala_id } = req.params;
+//   try {
+//     const result = await pool.query(`SELECT s.id, s.nome, s.descricao, s.codigo_sala, s.qr_code, s.created_at, s.updated_at, COUNT(DISTINCT sa.id) as total_alunos FROM salas s LEFT JOIN sala_alunos sa ON s.id = sa.sala_id WHERE s.id = $1 GROUP BY s.id`, [sala_id]);
+//     if (result.rows.length === 0) return res.status(404).json({ success: false, error: 'Sala não encontrada' });
+//     res.json({ success: true, sala: result.rows[0] });
+//   } catch (error) {
+//     console.error(' Erro ao buscar sala:', error);
+//     res.status(500).json({ success: false, error: 'Erro ao buscar sala' });
+//   }
+// });
+
 app.get('/salas/:sala_id', async (req, res) => {
   const { sala_id } = req.params;
   try {
-    const result = await pool.query(`SELECT s.id, s.nome, s.descricao, s.codigo_sala, s.qr_code, s.created_at, s.updated_at, COUNT(DISTINCT sa.id) as total_alunos FROM salas s LEFT JOIN sala_alunos sa ON s.id = sa.sala_id WHERE s.id = $1 GROUP BY s.id`, [sala_id]);
-    if (result.rows.length === 0) return res.status(404).json({ success: false, error: 'Sala não encontrada' });
+    const result = await pool.query(`
+      SELECT 
+        s.id, 
+        s.nome, 
+        s.descricao, 
+        s.codigo_sala, 
+        s.qr_code, 
+        s.created_at, 
+        s.updated_at, 
+        COUNT(DISTINCT sa.id) as total_alunos 
+      FROM salas s 
+      LEFT JOIN sala_alunos sa ON s.id = sa.sala_id 
+      WHERE s.id = $1 
+      GROUP BY s.id, s.nome, s.descricao, s.codigo_sala, s.qr_code, s.created_at, s.updated_at
+    `, [sala_id]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Sala não encontrada' });
+    }
+    
     res.json({ success: true, sala: result.rows[0] });
   } catch (error) {
-    console.error(' Erro ao buscar sala:', error);
+    console.error('❌ Erro ao buscar sala:', error);
     res.status(500).json({ success: false, error: 'Erro ao buscar sala' });
   }
 });
