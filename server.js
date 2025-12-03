@@ -528,14 +528,44 @@ app.post('/salas/entrar-com-perfil', async (req, res) => {
   }
 });
 
+// app.get('/salas/professor/:professor_id', async (req, res) => {
+//   const { professor_id } = req.params;
+//   if (!professor_id || professor_id === 'undefined') return res.status(400).json({ error: 'ID do professor inválido' });
+//   try {
+//     const result = await pool.query(`SELECT s.id, s.nome, s.descricao, s.codigo_sala, s.qr_code, s.created_at, s.updated_at, COUNT(sa.id) as total_alunos FROM salas s LEFT JOIN sala_alunos sa ON s.id = sa.sala_id WHERE s.professor_id = $1 GROUP BY s.id ORDER BY s.created_at DESC`, [professor_id]);
+//     res.json({ success: true, salas: result.rows });
+//   } catch (error) {
+//     console.error(' Erro ao buscar salas:', error);
+//     res.status(500).json({ error: 'Erro ao buscar salas' });
+//   }
+// });
 app.get('/salas/professor/:professor_id', async (req, res) => {
   const { professor_id } = req.params;
-  if (!professor_id || professor_id === 'undefined') return res.status(400).json({ error: 'ID do professor inválido' });
+  if (!professor_id || professor_id === 'undefined') {
+    return res.status(400).json({ error: 'ID do professor inválido' });
+  }
+  
   try {
-    const result = await pool.query(`SELECT s.id, s.nome, s.descricao, s.codigo_sala, s.qr_code, s.created_at, s.updated_at, COUNT(sa.id) as total_alunos FROM salas s LEFT JOIN sala_alunos sa ON s.id = sa.sala_id WHERE s.professor_id = $1 GROUP BY s.id ORDER BY s.created_at DESC`, [professor_id]);
+    const result = await pool.query(`
+      SELECT 
+        s.id, 
+        s.nome, 
+        s.descricao, 
+        s.codigo_sala, 
+        s.qr_code, 
+        s.created_at, 
+        s.updated_at, 
+        COUNT(sa.id) as total_alunos 
+      FROM salas s 
+      LEFT JOIN sala_alunos sa ON s.id = sa.sala_id 
+      WHERE s.professor_id = $1 
+      GROUP BY s.id, s.nome, s.descricao, s.codigo_sala, s.qr_code, s.created_at, s.updated_at 
+      ORDER BY s.created_at DESC
+    `, [professor_id]);
+    
     res.json({ success: true, salas: result.rows });
   } catch (error) {
-    console.error(' Erro ao buscar salas:', error);
+    console.error('❌ Erro ao buscar salas:', error);
     res.status(500).json({ error: 'Erro ao buscar salas' });
   }
 });
